@@ -1,5 +1,5 @@
 #include "FastLED.h"
-#define NUM_LEDS 50
+#define NUM_LEDS 80
 
 //MAX NUM of UV LEDs
 #define UV_LEDS 6
@@ -146,7 +146,7 @@ void loop()
     //if (checksum(payload)) //check the checksum + start&end byte
     //{  
       //
-      if (payload[1] == 0x50) //it means the a led command is on
+      if (payload[1] == 50) //it means the a led command is on
       {
         //tricky part - prepair for a headache... 
         // conversion form "octal" sensor data mapping to the led chain
@@ -156,14 +156,14 @@ void loop()
        
         int led_chain;
         if (payload[2] >= 10)
-           led_chain = ((payload[2]/0x0F)*8)+(payload[2]%8);
+           led_chain = ((payload[2]/10)*8)+(payload[2]%8);
         else
            led_chain = (payload[2]%8);
 
         //SPI dev = first digit
         //ADC channel = second digit
         
-        int sensor_loc = (payload[2]/0x0F*10) +(payload[2]%8);
+        int sensor_loc = (payload[2]/10) +(payload[2]%8);
         Serial.println(sensor_loc);
         
         kernel_pop(led_chain,sensor_loc);
