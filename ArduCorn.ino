@@ -31,6 +31,13 @@ CRGB leds[NUM_LEDS];
 
 byte corn_mapping[MAX_LEVEL][MAX_RING];
 
+struct kernel_corn
+{ 
+  bool is_kernel_popped;
+  long last_pop_ms;
+};
+
+kernel_corn popped_kernels[NUM_LEDS];
 // Array for holding the UV_LED lights behaviours and pins
 // PinNo, Value, periodePulse, periodePulse per LED
 int UV_arr_pin[UV_LEDS][4];
@@ -52,6 +59,7 @@ long time=0;
 
 bool onshot_arm = true;
 
+long last_check;
 // the setup routine runs once when you press reset:
 void setup() {
   UV_arr_pin[0][0] = LED_PIN0;
@@ -153,13 +161,11 @@ void loop()
         // for exmaple 22 in sensors' input is device 1
         // (actually 3 coz we count form 0) and channel 3 (actually 3 coz we count form 0)
         // so it will be 22 in sensors = (2(first digit) * 8) + 2 (second digit) = 18 in LED
-       
+        
+        
         int led_chain;
-        if (payload[2] >= 10)
-           led_chain = ((payload[2]/10)*8)+(payload[2]%8);
-        else
-           led_chain = (payload[2]%8);
-
+        led_chain = ((payload[2]/10)*8)+(payload[2]%8);
+        popped_kernels[led_chain].is_kernel_popped = true;
         //SPI dev = first digit
         //ADC channel = second digit
         
@@ -167,6 +173,7 @@ void loop()
         Serial.println(sensor_loc);
         
         kernel_pop(led_chain,sensor_loc);
+        popped_kernels[led_chain].last_pop_ms = millis();
       }
     //}
     //else //in case something went wornd the one byte is corrupted is "flashes" the buffer
@@ -175,7 +182,39 @@ void loop()
     
   }
   //leds[3] = CRGB::Blue;
-
+  const int flash_const = 100;
+  for (int j = 0; j < NUM_LEDS;j++)
+  {
+    if (popped_kernels[j].is_kernel_popped == true)
+      //when hit flash-on-off for 500ms the kernel that got hit
+      if (abs(popped_kernels[j].last_pop_ms - last_check > 0) and 
+          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*1))
+      {
+        leds[j] = CRGB::White;
+      }
+      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*1) and 
+          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*2))
+      {
+        leds[j] = CRGB::Black;
+      }
+      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*2) and 
+          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*3))
+      {
+        leds[j] = CRGB::White;
+      }
+      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*3) and 
+          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*4))
+      {
+        leds[j] = CRGB::Black;
+      }
+      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*4) and 
+          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*5))
+      {
+        leds[j] = CRGB::White;
+        popped_kernels[j].is_kernel_popped = false;
+      }
+  }
+  last_check = millis();
 
   FastLED.show();
   
@@ -222,6 +261,12 @@ void kernel_pop(int hit_kernel,int octRep)
     leds[hit_kernel-1].green =  random(0,255);
     leds[hit_kernel-1].blue  =  random(0,255);  
   }
+  else
+  {
+    leds[MAX_RING-1].red = random(0,255);
+    leds[MAX_RING-1].green =  random(0,255);
+    leds[MAX_RING-1].blue  =  random(0,255);  
+  }
   /*
      | |          
    --+-+--
@@ -234,6 +279,12 @@ void kernel_pop(int hit_kernel,int octRep)
     leds[hit_kernel+1].red = random(0,255);
     leds[hit_kernel+1].green =  random(0,255);
     leds[hit_kernel+1].blue  =  random(0,255);  
+  }
+  else
+  {
+    leds[NUM_LEDS-MAX_RING].red = random(0,255);
+    leds[NUM_LEDS-MAX_RING].green =  random(0,255);
+    leds[NUM_LEDS-MAX_RING].blue  =  random(0,255);    
   }
   /*
      | |          
@@ -275,6 +326,7 @@ int octal_decimal(int n) /* Function to convert octal to decimal */
     }
     return decimal;
 }
+
 
 // check sum data check up 
 bool checksum(byte payload_check[])
