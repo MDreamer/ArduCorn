@@ -29,6 +29,8 @@
 
 CRGB leds[NUM_LEDS];
 
+const int flash_const = 25;
+
 byte corn_mapping[MAX_LEVEL][MAX_RING];
 
 struct kernel_corn
@@ -60,6 +62,25 @@ long time=0;
 bool onshot_arm = true;
 
 long last_check;
+
+// test indication - when the corn is booted it gives a visual indication
+// of the LED driver by painting 3 rings in RGB
+void reset_corn()
+{
+  for (int i=0; i <= NUM_LEDS; i++)
+        leds[i] = CRGB::Black; 
+        
+  for (int i=0; i < MAX_RING; i++)
+    leds[i] = CRGB::Red;
+
+  for (int i=(MAX_RING*5); i < (MAX_RING*5) + MAX_RING; i++)
+    leds[i] = CRGB::Green;
+
+  for (int i=(MAX_RING*8); i < (MAX_RING*8) + MAX_RING; i++)
+    leds[i] = CRGB::Blue;
+    
+  FastLED.show(); 
+}
 // the setup routine runs once when you press reset:
 void setup() {
   UV_arr_pin[0][0] = LED_PIN0;
@@ -86,23 +107,13 @@ void setup() {
   Serial.setTimeout(10);
   randomSeed(analogRead(0));
   FastLED.addLeds<WS2811, 2>(leds, NUM_LEDS); 
-  //clear cloud
+  //clear corn
   for (int i=0; i <= NUM_LEDS; i++)
     leds[i] = CRGB::Black; 
 
-  //test indication
-  leds[10].red   = 255;
-  leds[10].green = 0;
-  leds[10].blue  = 0;
+  reset_corn();
   
-  leds[21].red   = 0;
-  leds[21].green = 255;
-  leds[21].blue  = 0;
-
-  leds[32].red   = 0;
-  leds[32].green = 0;
-  leds[32].blue  = 255;
-   FastLED.show(); 
+   
    
 }
 
@@ -117,7 +128,7 @@ void loop()
 
   time = millis();
   
-  for (int i;i < UV_LEDS; i++)
+  for (int i=0;i < UV_LEDS; i++)
   {
     UV_arr_pin[i][1] = 128+127*cos(2*PI/UV_arr_pin[i][2]*(UV_arr_pin[i][3]-time));
     analogWrite(UV_arr_pin[i][0],UV_arr_pin[i][1]); /// jut a test for the PWM
@@ -148,6 +159,7 @@ void loop()
     
     byte payload[MSG_SIZE];
     Serial.readBytes(payload,MSG_SIZE);
+    Serial.println(payload[1]);
     //Serial.write(payload,MSG_SIZE);
     //FastLED.show();
     //TODO: fix the checksum. Something wrong with the end byte checkinh
@@ -169,11 +181,18 @@ void loop()
         //SPI dev = first digit
         //ADC channel = second digit
         
-        int sensor_loc = (payload[2]/10) +(payload[2]%8);
-        Serial.println(sensor_loc);
+        int sensor_loc = payload[2];
+        
         
         kernel_pop(led_chain,sensor_loc);
+
+        //just for testing
+        //single_hit_colowipe(led_chain);
         popped_kernels[led_chain].last_pop_ms = millis();
+      }
+      else if (payload[1] == 80) // reset colors
+      {
+        reset_corn();
       }
     //}
     //else //in case something went wornd the one byte is corrupted is "flashes" the buffer
@@ -181,45 +200,59 @@ void loop()
     //    Serial.read();
     
   }
-  //leds[3] = CRGB::Blue;
-  const int flash_const = 100;
+  last_check = millis();
+  
+  //This part is doing thet flashign LED after a hit
   for (int j = 0; j < NUM_LEDS;j++)
   {
     if (popped_kernels[j].is_kernel_popped == true)
+    {
+      leds[j]= CRGB::Yellow;
       //when hit flash-on-off for 500ms the kernel that got hit
-      if (abs(popped_kernels[j].last_pop_ms - last_check > 0) and 
-          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*1))
+      if ((abs(last_check - popped_kernels[j].last_pop_ms) > 0) and 
+          (abs(last_check - popped_kernels[j].last_pop_ms) < flash_const*1))
       {
         leds[j] = CRGB::White;
       }
-      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*1) and 
-          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*2))
+      else if ((abs(last_check - popped_kernels[j].last_pop_ms) > (flash_const*1)) and 
+                abs((last_check - popped_kernels[j].last_pop_ms) < (flash_const*2)))
       {
         leds[j] = CRGB::Black;
       }
-      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*2) and 
-          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*3))
+      else if (abs((last_check - popped_kernels[j].last_pop_ms) > (flash_const*2)) and 
+               abs((last_check - popped_kernels[j].last_pop_ms) < (flash_const*3)))
       {
         leds[j] = CRGB::White;
       }
-      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*3) and 
-          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*4))
+      else if (abs((last_check - popped_kernels[j].last_pop_ms) > (flash_const*3)) and 
+               abs((last_check - popped_kernels[j].last_pop_ms) < (flash_const*4)))
       {
         leds[j] = CRGB::Black;
       }
-      else if (abs(popped_kernels[j].last_pop_ms - last_check > flash_const*4) and 
-          abs(popped_kernels[j].last_pop_ms - last_check < flash_const*5))
+      else if (abs((last_check - popped_kernels[j].last_pop_ms) > (flash_const*4)) and 
+               abs((last_check - popped_kernels[j].last_pop_ms) < (flash_const*5)))
       {
         leds[j] = CRGB::White;
         popped_kernels[j].is_kernel_popped = false;
       }
+    }
   }
-  last_check = millis();
+  
 
   FastLED.show();
   
 }
 
+//turns on the kernel that got
+void single_hit_colowipe(int hit_kernel)
+{
+  for (int i; i < NUM_LEDS; i++)
+    leds[i] = CRGB::Black;
+
+  leds[hit_kernel] = CRGB::White;
+    
+  FastLED.show();
+}
 //this functio calculated on the corn's cylinder the kernels that need to pop next to the one that got it
 // TODO: needs to be timed hit retina for the main kernel - turns white
 void kernel_pop(int hit_kernel,int octRep)
@@ -242,11 +275,18 @@ void kernel_pop(int hit_kernel,int octRep)
    --+-+--
      | |  
      */
+     //THe +1 is because the levels are not aligned and in one bottle indentation
   if (hit_kernel-MAX_RING >= 0)
   {
     leds[hit_kernel-MAX_RING].red = random(0,255);
     leds[hit_kernel-MAX_RING].green =  random(0,255);
     leds[hit_kernel-MAX_RING].blue  =  random(0,255);  
+  }
+  if (hit_kernel-MAX_RING+1 >= 0)
+  {
+    leds[hit_kernel-MAX_RING+1].red = random(0,255);
+    leds[hit_kernel-MAX_RING+1].green =  random(0,255);
+    leds[hit_kernel-MAX_RING+1].blue  =  random(0,255);  
   }
   /*
      | |          
@@ -293,38 +333,18 @@ void kernel_pop(int hit_kernel,int octRep)
    --+-+--
      |X|
      */
-  if (hit_kernel+MAX_RING < NUM_LEDS)
+  if (hit_kernel+MAX_RING-2 < NUM_LEDS)
   {
-    leds[hit_kernel+MAX_RING].red = random(0,255);
-    leds[hit_kernel+MAX_RING].green =  random(0,255);
-    leds[hit_kernel+MAX_RING].blue  =  random(0,255);  
+    leds[hit_kernel+MAX_RING-2].red = random(0,255);
+    leds[hit_kernel+MAX_RING-2].green =  random(0,255);
+    leds[hit_kernel+MAX_RING-2].blue  =  random(0,255);  
   }
-}
-
-int decimal_octal(int n) /* Function to convert decimal to octal */
-{
-    int rem, i=1, octal=0;
-    while (n!=0)
-    {
-        rem=n%8;
-        n/=8;
-        octal+=rem*i;
-        i*=10;
-    }
-    return octal;
-}
-
-int octal_decimal(int n) /* Function to convert octal to decimal */
-{
-    int decimal=0, i=0, rem;
-    while (n!=0)
-    {
-        rem = n%10;
-        n/=10;
-        decimal += rem*pow(8,i);
-        ++i;
-    }
-    return decimal;
+  if (hit_kernel+MAX_RING-1 < NUM_LEDS)
+  {
+    leds[hit_kernel+MAX_RING-1].red = random(0,255);
+    leds[hit_kernel+MAX_RING-1].green =  random(0,255);
+    leds[hit_kernel+MAX_RING-1].blue  =  random(0,255);  
+  }
 }
 
 
