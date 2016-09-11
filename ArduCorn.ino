@@ -33,6 +33,8 @@ const int flash_const = 25;
 
 byte corn_mapping[MAX_LEVEL][MAX_RING];
 
+bool debug_mode = true;
+
 struct kernel_corn
 { 
   bool is_kernel_popped;
@@ -63,20 +65,34 @@ bool onshot_arm = true;
 
 long last_check;
 
+//redout - useed to indicate error
+void redout()
+{
+  for (int i=0; i < NUM_LEDS; i++)
+    leds[i] = CRGB::Red; 
+}
+        
 // test indication - when the corn is booted it gives a visual indication
 // of the LED driver by painting 3 rings in RGB
 void reset_corn()
 {
-  for (int i=0; i <= NUM_LEDS; i++)
+  for (int i=0; i < NUM_LEDS; i++)
         leds[i] = CRGB::Black; 
         
   for (int i=0; i < MAX_RING; i++)
     leds[i] = CRGB::Red;
 
+  for (int i=(MAX_RING*1); i < (MAX_RING*1) + MAX_RING; i++)
+    leds[i] = CRGB::Red;
+
   for (int i=(MAX_RING*5); i < (MAX_RING*5) + MAX_RING; i++)
+    leds[i] = CRGB::Green;
+  for (int i=(MAX_RING*6); i < (MAX_RING*6) + MAX_RING; i++)
     leds[i] = CRGB::Green;
 
   for (int i=(MAX_RING*8); i < (MAX_RING*8) + MAX_RING; i++)
+    leds[i] = CRGB::Blue;
+  for (int i=(MAX_RING*9); i < (MAX_RING*9) + MAX_RING; i++)
     leds[i] = CRGB::Blue;
     
   FastLED.show(); 
@@ -159,15 +175,24 @@ void loop()
     
     byte payload[MSG_SIZE];
     Serial.readBytes(payload,MSG_SIZE);
-    Serial.println(payload[1]);
+    if (debug_mode)
+      for (int i = 0; i < MSG_SIZE; i++)
+      {
+        Serial.write(payload[i]);
+        Serial.print(" ");
+      }
+    //Serial.println(payload[1]);
     //Serial.write(payload,MSG_SIZE);
     //FastLED.show();
     //TODO: fix the checksum. Something wrong with the end byte checkinh
-    //if (checksum(payload)) //check the checksum + start&end byte
-    //{  
-      //
+    if (checksum(payload)) //check the checksum + start&end byte
+    {  
+      if (debug_mode)
+        Serial.println("checksum OK");
       if (payload[1] == 50) //it means the a led command is on
       {
+        if (debug_mode)
+          Serial.println("LED command detected");
         //tricky part - prepair for a headache... 
         // conversion form "octal" sensor data mapping to the led chain
         // for exmaple 22 in sensors' input is device 1
@@ -176,15 +201,30 @@ void loop()
         
         
         int led_chain;
-        led_chain = ((payload[2]/10)*8)+(payload[2]%8);
+        led_chain = ((payload[2]/10)*8)+(payload[2]%10);
         popped_kernels[led_chain].is_kernel_popped = true;
         //SPI dev = first digit
         //ADC channel = second digit
+
+        if (debug_mode)
+        {
+          Serial.print("got num ");
+          Serial.println(payload[2]);
+          
+          Serial.print("popping led number ");
+          Serial.println(led_chain);
+
+          Serial.print("1 digit");
+          Serial.println((payload[2]/10)*8);
+
+          Serial.print("2 digit");
+          Serial.println(payload[2]%8);
+        }
         
         int sensor_loc = payload[2];
         
         
-        kernel_pop(led_chain,sensor_loc);
+        kernel_pop(led_chain);
 
         //just for testing
         //single_hit_colowipe(led_chain);
@@ -194,12 +234,16 @@ void loop()
       {
         reset_corn();
       }
-    //}
-    //else //in case something went wornd the one byte is corrupted is "flashes" the buffer
-    //  while (Serial.available() > 0)
-    //    Serial.read();
-    
+    }
+    else //checksum error
+    {
+      redout(); // error indication
+      //in case something went wornd the one byte is corrupted is "flashes" the buffer
+      while (Serial.available() > 0)
+        Serial.read();
+    }    
   }
+  
   last_check = millis();
   
   //This part is doing thet flashign LED after a hit
@@ -207,7 +251,6 @@ void loop()
   {
     if (popped_kernels[j].is_kernel_popped == true)
     {
-      leds[j]= CRGB::Yellow;
       //when hit flash-on-off for 500ms the kernel that got hit
       if ((abs(last_check - popped_kernels[j].last_pop_ms) > 0) and 
           (abs(last_check - popped_kernels[j].last_pop_ms) < flash_const*1))
@@ -244,7 +287,7 @@ void loop()
 }
 
 //turns on the kernel that got
-void single_hit_colowipe(int hit_kernel)
+void single_hit_colowipe(int hit_kernel, int sensor_loc)
 {
   for (int i; i < NUM_LEDS; i++)
     leds[i] = CRGB::Black;
@@ -255,96 +298,112 @@ void single_hit_colowipe(int hit_kernel)
 }
 //this functio calculated on the corn's cylinder the kernels that need to pop next to the one that got it
 // TODO: needs to be timed hit retina for the main kernel - turns white
-void kernel_pop(int hit_kernel,int octRep)
+void kernel_pop(int hit_kernel)
 {
   /*
-     | |          
+      |          
    --+-+--
      |X|
    --+-+--
-     | |
+      |
      */
   leds[hit_kernel].red   = 255;
   leds[hit_kernel].green = 255;
   leds[hit_kernel].blue  = 255;
 
   /*
-     |X|          
+     X|X          
    --+-+--
      | |
    --+-+--
-     | |  
+      |  
      */
      //THe +1 is because the levels are not aligned and in one bottle indentation
-  if (hit_kernel-MAX_RING >= 0)
+  /*   
+  if ((hit_kernel+(MAX_RING*2)-1) < NUM_LEDS)
   {
-    leds[hit_kernel-MAX_RING].red = random(0,255);
-    leds[hit_kernel-MAX_RING].green =  random(0,255);
-    leds[hit_kernel-MAX_RING].blue  =  random(0,255);  
+    leds[hit_kernel+(MAX_RING*2)-1].red = random(0,255);
+    leds[hit_kernel+(MAX_RING*2)-1].green =  random(0,255);
+    leds[hit_kernel+(MAX_RING*2)-1].blue  =  random(0,255);  
   }
-  if (hit_kernel-MAX_RING+1 >= 0)
+  */
+  if ((hit_kernel+MAX_RING) < NUM_LEDS)
   {
-    leds[hit_kernel-MAX_RING+1].red = random(0,255);
-    leds[hit_kernel-MAX_RING+1].green =  random(0,255);
-    leds[hit_kernel-MAX_RING+1].blue  =  random(0,255);  
+    leds[hit_kernel+MAX_RING].red = random(0,255);
+    leds[hit_kernel+MAX_RING].green =  random(0,255);
+    leds[hit_kernel+MAX_RING].blue  =  random(0,255);  
   }
   /*
-     | |          
+      |          
    --+-+--
     X| |
    --+-+--
-     | |
+      |
      */
-  if (hit_kernel-1 >= 0)
+  if ((hit_kernel-1 > 0) and !(hit_kernel % 10 == 0))
   {
     leds[hit_kernel-1].red = random(0,255);
     leds[hit_kernel-1].green =  random(0,255);
     leds[hit_kernel-1].blue  =  random(0,255);  
   }
-  else
+  else if (hit_kernel == 0)
   {
+    //if kernel 0 was hit 
     leds[MAX_RING-1].red = random(0,255);
     leds[MAX_RING-1].green =  random(0,255);
     leds[MAX_RING-1].blue  =  random(0,255);  
-  }
+  } else if (hit_kernel % 10 == 0) // if kernel with 0 single digit 0 was hit - light led 7 on the the same ring 
+    {
+      leds[hit_kernel+MAX_RING-1].red = random(0,255);
+      leds[hit_kernel+MAX_RING-1].green =  random(0,255);
+      leds[hit_kernel+MAX_RING-1].blue  =  random(0,255);  
+    }
   /*
-     | |          
+      |          
    --+-+--
      | |X
    --+-+--
-     | |
+      |
      */
-  if (hit_kernel+1 < NUM_LEDS-1)
+  if ((hit_kernel+1 < NUM_LEDS) and !(hit_kernel % 10 == 7))
   {
     leds[hit_kernel+1].red = random(0,255);
     leds[hit_kernel+1].green =  random(0,255);
     leds[hit_kernel+1].blue  =  random(0,255);  
   }
-  else
+  else if (hit_kernel == NUM_LEDS-1)
   {
-    leds[NUM_LEDS-MAX_RING].red = random(0,255);
-    leds[NUM_LEDS-MAX_RING].green =  random(0,255);
-    leds[NUM_LEDS-MAX_RING].blue  =  random(0,255);    
-  }
+    leds[NUM_LEDS-MAX_RING+1].red = random(0,255);
+    leds[NUM_LEDS-MAX_RING+1].green =  random(0,255);
+    leds[NUM_LEDS-MAX_RING+1].blue  =  random(0,255);    
+  }else if (hit_kernel % 10 == 7) // if led 7 was hit - light led 0 on the the same ring 
+    {
+      leds[hit_kernel-MAX_RING+1].red = random(0,255);
+      leds[hit_kernel-MAX_RING+1].green =  random(0,255);
+      leds[hit_kernel-MAX_RING+1].blue  =  random(0,255);  
+    }
   /*
-     | |          
+      |          
    --+-+--
      | |
    --+-+--
-     |X|
+     X|X
      */
-  if (hit_kernel+MAX_RING-2 < NUM_LEDS)
+    
+  if (hit_kernel-MAX_RING > 0)
   {
-    leds[hit_kernel+MAX_RING-2].red = random(0,255);
-    leds[hit_kernel+MAX_RING-2].green =  random(0,255);
-    leds[hit_kernel+MAX_RING-2].blue  =  random(0,255);  
+    leds[hit_kernel-MAX_RING].red = random(0,255);
+    leds[hit_kernel-MAX_RING].green =  random(0,255);
+    leds[hit_kernel-MAX_RING].blue  =  random(0,255);  
   }
-  if (hit_kernel+MAX_RING-1 < NUM_LEDS)
+   /*
+  if (hit_kernel-(MAX_RING*2)-1 < 0)
   {
-    leds[hit_kernel+MAX_RING-1].red = random(0,255);
-    leds[hit_kernel+MAX_RING-1].green =  random(0,255);
-    leds[hit_kernel+MAX_RING-1].blue  =  random(0,255);  
+    leds[hit_kernel-(MAX_RING*2)-1].red = random(0,255);
+    leds[hit_kernel-(MAX_RING*2)-1].green =  random(0,255);
+    leds[hit_kernel-(MAX_RING*2)-1].blue  =  random(0,255);  
   }
+  */
 }
 
 
@@ -356,11 +415,15 @@ bool checksum(byte payload_check[])
   {
     tempChkSum += payload_check[i];
   }
-  
-  if (tempChkSum == payload_check[MSG_SIZE - 1] and 
-      payload_check[0] == 0x73 and //'s' char 
-      payload_check[7] == 0x72) //'r' char 
-    return true;
+   
+  if ((tempChkSum == payload_check[MSG_SIZE - 1]) and 
+      (payload_check[0] == 115) and //'s' char = 0x73
+      (payload_check[7] == 114)) //'r' char  = 0x72
+      {
+        if (debug_mode)
+            Serial.println("Passed checksum + prefix + suffix");
+        return true;
+      }
   else
     return false; 
 }
